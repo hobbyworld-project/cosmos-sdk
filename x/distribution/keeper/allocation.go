@@ -3,7 +3,6 @@ package keeper
 import (
 	"cosmossdk.io/math"
 	abci "github.com/cometbft/cometbft/abci/types"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/distribution/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -47,7 +46,6 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 	// Ref: https://github.com/cosmos/cosmos-sdk/pull/3099#discussion_r246276376
 	for _, vote := range bondedVotes {
 		validator := k.stakingKeeper.ValidatorByConsAddr(ctx, vote.Validator.Address)
-
 		// TODO: Consider micro-slashing for missing votes.
 		//
 		// Ref: https://github.com/cosmos/cosmos-sdk/issues/2525#issuecomment-430838701
@@ -67,36 +65,54 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 // splitting according to commission.
 func (k Keeper) AllocateTokensToValidator(ctx sdk.Context, val stakingtypes.ValidatorI, tokens sdk.DecCoins) {
 	// split tokens between validator and delegators according to commission
-	commission := tokens.MulDec(val.GetCommission())
-	shared := tokens.Sub(commission)
+	//commission := tokens.MulDec(val.GetCommission())
+	//shared := tokens.Sub(commission)
 
-	// update current commission
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			types.EventTypeCommission,
-			sdk.NewAttribute(sdk.AttributeKeyAmount, commission.String()),
-			sdk.NewAttribute(types.AttributeKeyValidator, val.GetOperator().String()),
-		),
-	)
-	currentCommission := k.GetValidatorAccumulatedCommission(ctx, val.GetOperator())
-	currentCommission.Commission = currentCommission.Commission.Add(commission...)
-	k.SetValidatorAccumulatedCommission(ctx, val.GetOperator(), currentCommission)
+	//// update current commission
+	//ctx.EventManager().EmitEvent(
+	//	sdk.NewEvent(
+	//		types.EventTypeCommission,
+	//		sdk.NewAttribute(sdk.AttributeKeyAmount, commission.String()),
+	//		sdk.NewAttribute(types.AttributeKeyValidator, val.GetOperator().String()),
+	//	),
+	//)
+	//currentCommission := k.GetValidatorAccumulatedCommission(ctx, val.GetOperator())
+	//currentCommission.Commission = currentCommission.Commission.Add(commission...)
+	//k.SetValidatorAccumulatedCommission(ctx, val.GetOperator(), currentCommission)
+
+	logger := ctx.Logger()
+
+	var valBurn = val
+	params := k.GetParams(ctx)
+	logger.Debug("[Distribution] allocate tokens", "Validator", val.GetOperator().String(), "reward", tokens.String(), "params", params)
+	if params.BurnAddress != "" {
+		for _, v := range params.BurnValidators {
+			if v == val.GetOperator().String() {
+				burnVal, err := sdk.ValAddressFromBech32(params.BurnAddress)
+				if err != nil {
+					panic("burn address is not a valid operator address")
+				}
+				valBurn = k.stakingKeeper.Validator(ctx, burnVal)
+				logger.Info("[Distribution] burn tokens", "Validator", val.GetOperator().String(), "reward", tokens.String(), "burn address", valBurn.GetOperator())
+			}
+		}
+	}
 
 	// update current rewards
-	currentRewards := k.GetValidatorCurrentRewards(ctx, val.GetOperator())
-	currentRewards.Rewards = currentRewards.Rewards.Add(shared...)
-	k.SetValidatorCurrentRewards(ctx, val.GetOperator(), currentRewards)
+	currentRewards := k.GetValidatorCurrentRewards(ctx, valBurn.GetOperator())
+	currentRewards.Rewards = currentRewards.Rewards.Add(tokens...)
+	k.SetValidatorCurrentRewards(ctx, valBurn.GetOperator(), currentRewards)
 
 	// update outstanding rewards
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeRewards,
 			sdk.NewAttribute(sdk.AttributeKeyAmount, tokens.String()),
-			sdk.NewAttribute(types.AttributeKeyValidator, val.GetOperator().String()),
+			sdk.NewAttribute(types.AttributeKeyValidator, valBurn.GetOperator().String()),
 		),
 	)
 
-	outstanding := k.GetValidatorOutstandingRewards(ctx, val.GetOperator())
+	outstanding := k.GetValidatorOutstandingRewards(ctx, valBurn.GetOperator())
 	outstanding.Rewards = outstanding.Rewards.Add(tokens...)
-	k.SetValidatorOutstandingRewards(ctx, val.GetOperator(), outstanding)
+	k.SetValidatorOutstandingRewards(ctx, valBurn.GetOperator(), outstanding)
 }

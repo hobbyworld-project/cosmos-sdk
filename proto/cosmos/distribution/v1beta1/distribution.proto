@@ -39,6 +39,12 @@ message Params {
   ];
 
   bool withdraw_addr_enabled = 4;
+
+  // burn_validators defines the validator block rewards send to burn validator
+  repeated string burn_validators = 5 [(amino.dont_omitempty) = true];
+
+  // burn_address defines the validator address who receives the rewards
+  string burn_address = 6  [(amino.dont_omitempty) = true];
 }
 
 // ValidatorHistoricalRewards represents historical rewards for a validator.
