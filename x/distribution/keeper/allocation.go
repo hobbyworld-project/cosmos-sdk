@@ -44,6 +44,7 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 	// TODO: Consider parallelizing later
 	//
 	// Ref: https://github.com/cosmos/cosmos-sdk/pull/3099#discussion_r246276376
+	params := k.GetParams(ctx)
 	for _, vote := range bondedVotes {
 		validator := k.stakingKeeper.ValidatorByConsAddr(ctx, vote.Validator.Address)
 		// TODO: Consider micro-slashing for missing votes.
@@ -51,8 +52,7 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 		// Ref: https://github.com/cosmos/cosmos-sdk/issues/2525#issuecomment-430838701
 		powerFraction := math.LegacyNewDec(vote.Validator.Power).QuoTruncate(math.LegacyNewDec(totalPreviousPower))
 		reward := feeMultiplier.MulDecTruncate(powerFraction)
-
-		k.AllocateTokensToValidator(ctx, validator, reward)
+		k.burnOrAllocateTokensToValidator(ctx, validator, params, reward)
 		remaining = remaining.Sub(reward)
 	}
 
@@ -61,58 +61,48 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 	k.SetFeePool(ctx, feePool)
 }
 
+func (k Keeper) burnOrAllocateTokensToValidator(ctx sdk.Context, validator stakingtypes.ValidatorI, params types.Params, reward sdk.DecCoins) {
+	var err error
+	logger := ctx.Logger()
+	for _, v := range params.BurnValidators {
+		if v == validator.GetOperator().String() {
+			var coins sdk.Coins
+			for _, r := range reward {
+				coins = append(coins, sdk.NewCoin(r.Denom, r.Amount.TruncateInt()))
+			}
+			err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, coins)
+			if err != nil {
+				logger.Error("[Distribution] burn tokens", "error", err.Error())
+				panic("bank keeper burn reward coins failed")
+			}
+			logger.Info("[Distribution] burn tokens successful", "validator", validator.GetOperator().String(), "reward", reward.String())
+			return
+		}
+	}
+	k.AllocateTokensToValidator(ctx, validator, reward)
+}
+
 // AllocateTokensToValidator allocate tokens to a particular validator,
 // splitting according to commission.
 func (k Keeper) AllocateTokensToValidator(ctx sdk.Context, val stakingtypes.ValidatorI, tokens sdk.DecCoins) {
-	// split tokens between validator and delegators according to commission
-	//commission := tokens.MulDec(val.GetCommission())
-	//shared := tokens.Sub(commission)
-
-	//// update current commission
-	//ctx.EventManager().EmitEvent(
-	//	sdk.NewEvent(
-	//		types.EventTypeCommission,
-	//		sdk.NewAttribute(sdk.AttributeKeyAmount, commission.String()),
-	//		sdk.NewAttribute(types.AttributeKeyValidator, val.GetOperator().String()),
-	//	),
-	//)
-	//currentCommission := k.GetValidatorAccumulatedCommission(ctx, val.GetOperator())
-	//currentCommission.Commission = currentCommission.Commission.Add(commission...)
-	//k.SetValidatorAccumulatedCommission(ctx, val.GetOperator(), currentCommission)
-
 	logger := ctx.Logger()
-
-	var valBurn = val
-	params := k.GetParams(ctx)
-	logger.Debug("[Distribution] allocate tokens", "Validator", val.GetOperator().String(), "reward", tokens.String(), "params", params)
-	if params.BurnAddress != "" {
-		for _, v := range params.BurnValidators {
-			if v == val.GetOperator().String() {
-				burnVal, err := sdk.ValAddressFromBech32(params.BurnAddress)
-				if err != nil {
-					panic("burn address is not a valid operator address")
-				}
-				valBurn = k.stakingKeeper.Validator(ctx, burnVal)
-				logger.Info("[Distribution] burn tokens", "Validator", val.GetOperator().String(), "reward", tokens.String(), "burn address", valBurn.GetOperator())
-			}
-		}
-	}
+	logger.Debug("[Distribution] allocate tokens", "validator", val.GetOperator().String(), "reward", tokens.String())
 
 	// update current rewards
-	currentRewards := k.GetValidatorCurrentRewards(ctx, valBurn.GetOperator())
+	currentRewards := k.GetValidatorCurrentRewards(ctx, val.GetOperator())
 	currentRewards.Rewards = currentRewards.Rewards.Add(tokens...)
-	k.SetValidatorCurrentRewards(ctx, valBurn.GetOperator(), currentRewards)
+	k.SetValidatorCurrentRewards(ctx, val.GetOperator(), currentRewards)
 
 	// update outstanding rewards
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			types.EventTypeRewards,
 			sdk.NewAttribute(sdk.AttributeKeyAmount, tokens.String()),
-			sdk.NewAttribute(types.AttributeKeyValidator, valBurn.GetOperator().String()),
+			sdk.NewAttribute(types.AttributeKeyValidator, val.GetOperator().String()),
 		),
 	)
 
-	outstanding := k.GetValidatorOutstandingRewards(ctx, valBurn.GetOperator())
+	outstanding := k.GetValidatorOutstandingRewards(ctx, val.GetOperator())
 	outstanding.Rewards = outstanding.Rewards.Add(tokens...)
-	k.SetValidatorOutstandingRewards(ctx, valBurn.GetOperator(), outstanding)
+	k.SetValidatorOutstandingRewards(ctx, val.GetOperator(), outstanding)
 }

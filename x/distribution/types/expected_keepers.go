@@ -28,6 +28,7 @@ type BankKeeper interface {
 	SendCoinsFromAccountToModule(ctx sdk.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 
 	BlockedAddr(addr sdk.AccAddress) bool
+	BurnCoins(ctx sdk.Context, moduleName string, amt sdk.Coins) error
 }
 
 // StakingKeeper expected staking keeper (noalias)
