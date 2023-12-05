@@ -64,30 +64,82 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 func (k Keeper) burnOrAllocateTokensToValidator(ctx sdk.Context, validator stakingtypes.ValidatorI, params types.Params, reward sdk.DecCoins) {
 	var err error
 	logger := ctx.Logger()
-	for _, v := range params.BurnValidators {
-		if v == validator.GetOperator().String() {
-			var coins sdk.Coins
-			for _, r := range reward {
-				coins = append(coins, sdk.NewCoin(r.Denom, r.Amount.TruncateInt()))
-			}
-			err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, coins)
-			if err != nil {
-				logger.Error("[Distribution] burn tokens", "error", err.Error())
-				panic("bank keeper burn reward coins failed")
-			}
-			logger.Info("[Distribution] burn tokens successful", "validator", validator.GetOperator().String(), "reward", reward.String())
+	var voterReward, minerReward sdk.DecCoins
+	var vr = params.VoterRewards
+	voterReward = reward.MulDecTruncate(vr.Ratio)
+	minerReward = reward.Sub(voterReward)
+	var voterCoins sdk.Coins
+	voterCoins = k.DecCoins2Coins(voterReward)
+	if minerReward.IsAnyNegative() {
+		panic("reward all coins must be positive")
+	}
+
+	if vr.BeneficiaryAddr != "" {
+		var va sdk.AccAddress
+		va, err = sdk.AccAddressFromBech32(vr.BeneficiaryAddr)
+		if err != nil {
+			panic("distribution voter reward beneficiary address invalid")
+		}
+		err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, va, voterCoins)
+		if err != nil {
+			logger.Error("[Distribution] send voter's tokens", "error", err.Error())
 			return
 		}
+		logger.Debug("[Distribution] send voter's tokens", "beneficiary", vr.BeneficiaryAddr, "reward", voterCoins.String())
+	} else {
+		err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, voterCoins)
+		if err != nil {
+			logger.Error("[Distribution] burn voter's tokens", "error", err.Error())
+			return
+		}
+		logger.Debug("[Distribution] burn voter's tokens", "reward", voterCoins.String())
 	}
-	k.AllocateTokensToValidator(ctx, validator, reward)
+
+	var ok bool
+	ok = k.isBurnValidator(validator, params.BurnValidators)
+	if ok {
+		var coins sdk.Coins
+		coins = k.DecCoins2Coins(minerReward)
+		err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, coins)
+		if err != nil {
+			logger.Error("[Distribution] burn tokens", "error", err.Error())
+			return
+		}
+	} else {
+		k.AllocateTokensToValidator(ctx, validator, minerReward)
+		logger.Debug("[Distribution] allocate tokens", "validator", validator.GetOperator().String(), "reward", minerReward.String())
+	}
+}
+
+func (k Keeper) isBurnValidator(validator stakingtypes.ValidatorI, burnValidators []string) bool {
+	var err error
+	for _, v := range burnValidators {
+		oper := validator.GetOperator().String()
+		if v == oper {
+			return true
+		}
+		var accAddr sdk.AccAddress
+		accAddr, err = sdk.AccAddressFromBech32(v)
+		if err == nil {
+			va := sdk.ValAddress(accAddr.Bytes())
+			if va.String() == oper {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (k Keeper) DecCoins2Coins(dcs sdk.DecCoins) (coins sdk.Coins) {
+	for _, d := range dcs {
+		coins = append(coins, sdk.NewCoin(d.Denom, d.Amount.TruncateInt()))
+	}
+	return coins
 }
 
 // AllocateTokensToValidator allocate tokens to a particular validator,
 // splitting according to commission.
 func (k Keeper) AllocateTokensToValidator(ctx sdk.Context, val stakingtypes.ValidatorI, tokens sdk.DecCoins) {
-	logger := ctx.Logger()
-	logger.Debug("[Distribution] allocate tokens", "validator", val.GetOperator().String(), "reward", tokens.String())
-
 	// update current rewards
 	currentRewards := k.GetValidatorCurrentRewards(ctx, val.GetOperator())
 	currentRewards.Rewards = currentRewards.Rewards.Add(tokens...)

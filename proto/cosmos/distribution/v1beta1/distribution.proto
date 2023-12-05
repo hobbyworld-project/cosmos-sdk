@@ -42,7 +42,19 @@ message Params {
 
   // burn_validators defines the validator block rewards send to burn validator
   repeated string burn_validators = 5 [(amino.dont_omitempty) = true];
-  
+
+  // voter_rewards defines the voter rewards ratio and beneficiary address
+  VoterRewards voter_rewards = 6 [(amino.dont_omitempty) = true];
+}
+
+// VoterRewards defines voter beneficiary ratio and address from minted block.
+message VoterRewards {
+  string ratio = 1 [
+  (cosmos_proto.scalar)  = "cosmos.Dec",
+  (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
+  (gogoproto.nullable)   = false
+];
+  string beneficiary_addr = 2 [(amino.dont_omitempty) = true]; //beneficiary account address
 }
 
 // ValidatorHistoricalRewards represents historical rewards for a validator.
