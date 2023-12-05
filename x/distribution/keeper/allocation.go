@@ -112,19 +112,10 @@ func (k Keeper) burnOrAllocateTokensToValidator(ctx sdk.Context, validator staki
 }
 
 func (k Keeper) isBurnValidator(validator stakingtypes.ValidatorI, burnValidators []string) bool {
-	var err error
 	for _, v := range burnValidators {
 		oper := validator.GetOperator().String()
 		if v == oper {
 			return true
-		}
-		var accAddr sdk.AccAddress
-		accAddr, err = sdk.AccAddressFromBech32(v)
-		if err == nil {
-			va := sdk.ValAddress(accAddr.Bytes())
-			if va.String() == oper {
-				return true
-			}
 		}
 	}
 	return false
