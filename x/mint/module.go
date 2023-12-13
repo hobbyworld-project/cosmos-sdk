@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"sort"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
@@ -163,7 +165,9 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {
 	var genesisState types.GenesisState
 	cdc.MustUnmarshalJSON(data, &genesisState)
-
+	if err := am.checkGenesisState(genesisState); err != nil {
+		panic("mint module check genesis state failed")
+	}
 	am.keeper.InitGenesis(ctx, am.authKeeper, &genesisState)
 	return []abci.ValidatorUpdate{}
 }
@@ -202,6 +206,38 @@ func (am AppModule) RegisterStoreDecoder(sdr sdk.StoreDecoderRegistry) {
 
 // WeightedOperations doesn't return any mint module operation.
 func (AppModule) WeightedOperations(_ module.SimulationState) []simtypes.WeightedOperation {
+	return nil
+}
+
+func (am AppModule) checkGenesisState(genesisState types.GenesisState) (err error) {
+	reduct := genesisState.Params.Reduction
+	if reduct.Enable {
+		//check total provisions and reduction heights
+		if reduct.TotalProvisions.IsZero() || len(reduct.Heights) <= 1 {
+			err = fmt.Errorf("reduction is enabled but total provisions or half reduction heights %v not enough", len(reduct.Heights))
+			log.Fatalf(err.Error())
+			return err
+		}
+		//check the heights sorted or not
+		var hm = make(map[uint64]int)
+		for i, height := range reduct.Heights {
+			hm[height] = i
+		}
+		sort.Slice(reduct.Heights, func(i, j int) bool {
+			if reduct.Heights[j] > reduct.Heights[i] {
+				return true
+			}
+			return false
+		})
+		for i, height := range reduct.Heights {
+			pos := hm[height]
+			if pos != i {
+				err = fmt.Errorf("reduction heights is not sorted at position %v", pos)
+				log.Fatalf(err.Error())
+				return err
+			}
+		}
+	}
 	return nil
 }
 
