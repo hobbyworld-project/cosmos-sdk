@@ -82,7 +82,7 @@ func (m Minter) BlockProvision(params Params) sdk.Coin {
 	return sdk.NewCoin(params.MintDenom, provisionAmt.TruncateInt())
 }
 
-// BlockReward returns the rewards for a block based on the reduction
+// BlockProvisionReduction returns the rewards for a block based on the reduction
 func (m Minter) BlockProvisionReduction(height int64, params Params) sdk.Coin {
 	var pos, last int
 	var reward = math.LegacyNewDec(0)

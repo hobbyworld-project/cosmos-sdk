@@ -40,11 +40,11 @@ const (
 	Purpose = 44
 
 	// CoinType is the ATOM coin type as defined in SLIP44 (https://github.com/satoshilabs/slips/blob/master/slip-0044.md)
-	CoinType = 118
+	CoinType = 60
 
 	// FullFundraiserPath is the parts of the BIP44 HD path that are fixed by
 	// what we used during the ATOM fundraiser.
-	FullFundraiserPath = "m/44'/118'/0'/0/0"
+	FullFundraiserPath = "m/44'/60'/0'/0/0"
 
 	// PrefixAccount is the prefix for account keys
 	PrefixAccount = "acc"

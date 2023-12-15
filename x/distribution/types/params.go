@@ -17,8 +17,8 @@ func DefaultParams() Params {
 		BonusProposerReward: sdk.ZeroDec(),            // deprecated
 		WithdrawAddrEnabled: true,
 		VoterRewards: &VoterRewards{
-			Ratio:           sdk.NewDecWithPrec(30, 2), // 30%
-			BeneficiaryAddr: "",
+			Ratio:         sdk.NewDecWithPrec(30, 2), // 30%
+			SettleHeights: 12343,
 		},
 	}
 }

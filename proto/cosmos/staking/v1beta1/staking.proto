@@ -330,6 +330,20 @@ message Params {
     (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
     (gogoproto.nullable)   = false
   ];
+  // min_bond_amount is the minimum bond amount of staking tokens as a validator
+  string min_bond_amount = 7 [
+    (gogoproto.moretags)   = "yaml:\"min_bond_amount\"",
+    (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
+    (gogoproto.nullable)   = false
+  ];
+  // min_bond_amount is the max bond amount of staking tokens as a validator
+  string max_bond_amount = 8 [
+    (gogoproto.moretags)   = "yaml:\"max_bond_amount\"",
+    (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
+    (gogoproto.nullable)   = false
+  ];
+  // enable_evm means validator can not accept delegation and needs to apply on evm contract before create validator
+  bool enable_evm = 9;
 }
 
 // DelegationResponse is equivalent to Delegation except that it contains a

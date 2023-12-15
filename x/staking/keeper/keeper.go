@@ -22,12 +22,13 @@ var _ types.DelegationSet = Keeper{}
 
 // Keeper of the x/staking store
 type Keeper struct {
-	storeKey   storetypes.StoreKey
-	cdc        codec.BinaryCodec
-	authKeeper types.AccountKeeper
-	bankKeeper types.BankKeeper
-	hooks      types.StakingHooks
-	authority  string
+	storeKey    storetypes.StoreKey
+	cdc         codec.BinaryCodec
+	authKeeper  types.AccountKeeper
+	bankKeeper  types.BankKeeper
+	hooks       types.StakingHooks
+	authority   string
+	evmCallback sdk.EvmEventCallback
 }
 
 // NewKeeper creates a new staking Keeper instance
@@ -130,4 +131,8 @@ func (k Keeper) GetValidatorUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 	k.cdc.MustUnmarshal(bz, &valUpdates)
 
 	return valUpdates.Updates
+}
+
+func (k Keeper) SetEvmCallback(cb sdk.EvmEventCallback) {
+	k.evmCallback = cb
 }

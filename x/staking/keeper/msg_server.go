@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -33,6 +34,37 @@ var _ types.MsgServer = msgServer{}
 func (k msgServer) CreateValidator(goCtx context.Context, msg *types.MsgCreateValidator) (*types.MsgCreateValidatorResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	//check min and max bond tokens
+	params := k.GetParams(ctx)
+	if !params.MinBondAmount.IsZero() {
+		if msg.Value.Amount.LT(params.MinBondAmount.TruncateInt()) {
+			return nil, fmt.Errorf("bond amount %s is less than min_bond_amount %s", msg.Value.Amount, params.MinBondAmount)
+		}
+	}
+	if !params.MaxBondAmount.IsZero() {
+		if msg.Value.Amount.GT(params.MaxBondAmount.TruncateInt()) {
+			return nil, fmt.Errorf("bond amount %s is greater than max_bond_amount %s", msg.Value.Amount, params.MaxBondAmount)
+		}
+	}
+	if params.EnableEvm {
+		return k.handleEvmCreateValidator(ctx, msg)
+	}
+	return k.handleNativeCreateValidator(ctx, msg)
+}
+
+func (k msgServer) handleEvmCreateValidator(ctx sdk.Context, msg *types.MsgCreateValidator) (*types.MsgCreateValidatorResponse, error) {
+	//TODO: check evm contract about validator and delegate tokens to staking pool
+	ctx.EventManager().EmitEvents(sdk.Events{
+		sdk.NewEvent(
+			types.EventTypeCreateValidator,
+			sdk.NewAttribute(types.AttributeKeyValidator, msg.ValidatorAddress),
+			sdk.NewAttribute(sdk.AttributeKeyAmount, msg.Value.String()),
+		),
+	})
+	return &types.MsgCreateValidatorResponse{}, nil
+}
+
+func (k msgServer) handleNativeCreateValidator(ctx sdk.Context, msg *types.MsgCreateValidator) (*types.MsgCreateValidatorResponse, error) {
 	valAddr, err := sdk.ValAddressFromBech32(msg.ValidatorAddress)
 	if err != nil {
 		return nil, err
@@ -131,13 +163,17 @@ func (k msgServer) CreateValidator(goCtx context.Context, msg *types.MsgCreateVa
 			sdk.NewAttribute(sdk.AttributeKeyAmount, msg.Value.String()),
 		),
 	})
-
 	return &types.MsgCreateValidatorResponse{}, nil
 }
 
 // EditValidator defines a method for editing an existing validator
 func (k msgServer) EditValidator(goCtx context.Context, msg *types.MsgEditValidator) (*types.MsgEditValidatorResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	params := k.GetParams(ctx)
+	if params.EnableEvm {
+		return nil, fmt.Errorf("validator delegation was disabled")
+	}
 	valAddr, err := sdk.ValAddressFromBech32(msg.ValidatorAddress)
 	if err != nil {
 		return nil, err
@@ -198,6 +234,10 @@ func (k msgServer) EditValidator(goCtx context.Context, msg *types.MsgEditValida
 // Delegate defines a method for performing a delegation of coins from a delegator to a validator
 func (k msgServer) Delegate(goCtx context.Context, msg *types.MsgDelegate) (*types.MsgDelegateResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+	params := k.GetParams(ctx)
+	if params.EnableEvm {
+		return nil, fmt.Errorf("validator delegation was disabled")
+	}
 	valAddr, valErr := sdk.ValAddressFromBech32(msg.ValidatorAddress)
 	if valErr != nil {
 		return nil, valErr
@@ -252,6 +292,10 @@ func (k msgServer) Delegate(goCtx context.Context, msg *types.MsgDelegate) (*typ
 // BeginRedelegate defines a method for performing a redelegation of coins from a delegator and source validator to a destination validator
 func (k msgServer) BeginRedelegate(goCtx context.Context, msg *types.MsgBeginRedelegate) (*types.MsgBeginRedelegateResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+	params := k.GetParams(ctx)
+	if params.EnableEvm {
+		return nil, fmt.Errorf("validator delegation was disabled")
+	}
 	valSrcAddr, err := sdk.ValAddressFromBech32(msg.ValidatorSrcAddress)
 	if err != nil {
 		return nil, err
@@ -315,7 +359,10 @@ func (k msgServer) BeginRedelegate(goCtx context.Context, msg *types.MsgBeginRed
 // Undelegate defines a method for performing an undelegation from a delegate and a validator
 func (k msgServer) Undelegate(goCtx context.Context, msg *types.MsgUndelegate) (*types.MsgUndelegateResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
+	params := k.GetParams(ctx)
+	if params.EnableEvm {
+		return nil, fmt.Errorf("validator delegation was disabled")
+	}
 	addr, err := sdk.ValAddressFromBech32(msg.ValidatorAddress)
 	if err != nil {
 		return nil, err
@@ -372,7 +419,10 @@ func (k msgServer) Undelegate(goCtx context.Context, msg *types.MsgUndelegate) (
 // and delegate back to the validator.
 func (k msgServer) CancelUnbondingDelegation(goCtx context.Context, msg *types.MsgCancelUnbondingDelegation) (*types.MsgCancelUnbondingDelegationResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
+	params := k.GetParams(ctx)
+	if params.EnableEvm {
+		return nil, fmt.Errorf("validator delegation was disabled")
+	}
 	valAddr, err := sdk.ValAddressFromBech32(msg.ValidatorAddress)
 	if err != nil {
 		return nil, err
@@ -477,7 +527,10 @@ func (k msgServer) CancelUnbondingDelegation(goCtx context.Context, msg *types.M
 
 func (ms msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParams) (*types.MsgUpdateParamsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
+	params := ms.GetParams(ctx)
+	if params.EnableEvm {
+		return nil, fmt.Errorf("validator delegation was disabled")
+	}
 	if ms.authority != msg.Authority {
 		return nil, sdkerrors.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", ms.authority, msg.Authority)
 	}

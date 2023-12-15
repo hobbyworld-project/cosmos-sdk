@@ -54,7 +54,7 @@ message VoterRewards {
   (gogoproto.customtype) = "github.com/cosmos/cosmos-sdk/types.Dec",
   (gogoproto.nullable)   = false
 ];
-  string beneficiary_addr = 2 [(amino.dont_omitempty) = true]; //beneficiary account address
+  int64 settle_heights = 3; //how many heights to settle for voter's rewards when beneficiary address is empty
 }
 
 // ValidatorHistoricalRewards represents historical rewards for a validator.

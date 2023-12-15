@@ -30,6 +30,9 @@ const (
 	// value by not adding the staking module to the application module manager's
 	// SetOrderBeginBlockers.
 	DefaultHistoricalEntries uint32 = 10000
+
+	DefaultMinBondAmountStr = "200000000000000000000000"
+	DefaultMaxBondAmountStr = "300000000000000000000000"
 )
 
 // DefaultMinCommissionRate is set to 0%
@@ -49,14 +52,25 @@ func NewParams(unbondingTime time.Duration, maxValidators, maxEntries, historica
 
 // DefaultParams returns a default set of parameters.
 func DefaultParams() Params {
-	return NewParams(
-		DefaultUnbondingTime,
-		DefaultMaxValidators,
-		DefaultMaxEntries,
-		DefaultHistoricalEntries,
-		sdk.DefaultBondDenom,
-		DefaultMinCommissionRate,
-	)
+	DefaultMinBondAmount, err := sdk.NewDecFromStr(DefaultMinBondAmountStr)
+	if err != nil {
+		panic("new default min bond amount from string failed")
+	}
+	DefaultMaxBondAmount, err := sdk.NewDecFromStr(DefaultMaxBondAmountStr)
+	if err != nil {
+		panic("new default max bond amount from string failed")
+	}
+	return Params{
+		UnbondingTime:     DefaultUnbondingTime,
+		MaxValidators:     DefaultMaxValidators,
+		MaxEntries:        DefaultMaxEntries,
+		HistoricalEntries: DefaultHistoricalEntries,
+		BondDenom:         sdk.DefaultBondDenom,
+		MinCommissionRate: DefaultMinCommissionRate,
+		MinBondAmount:     DefaultMinBondAmount,
+		MaxBondAmount:     DefaultMaxBondAmount,
+		EnableEvm:         true,
+	}
 }
 
 // String returns a human readable string representation of the parameters.
