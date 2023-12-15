@@ -35,7 +35,7 @@ func BeginBlocker(ctx sdk.Context, k keeper.Keeper, ic types.InflationCalculatio
 		}
 		logger := k.Logger(ctx)
 
-		logger.Info("[mint] minted coins", "amount", mintedCoin.String())
+		logger.Debug("minted coins", "amount", mintedCoin.String())
 		// send the minted coins to the fee collector account
 		err = k.AddCollectedFees(ctx, mintedCoins)
 		if err != nil {
@@ -73,7 +73,7 @@ func BeginBlocker(ctx sdk.Context, k keeper.Keeper, ic types.InflationCalculatio
 		if err != nil {
 			panic(err)
 		}
-		logger.Info("[mint] minted coins", "amount", mintedCoin.String())
+		logger.Debug("minted coins", "amount", mintedCoin.String())
 		if mintedCoin.Amount.IsInt64() {
 			defer telemetry.ModuleSetGauge(types.ModuleName, float32(mintedCoin.Amount.Int64()), "minted_tokens")
 		}
