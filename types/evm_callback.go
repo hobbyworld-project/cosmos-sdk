@@ -3,7 +3,8 @@ package types
 type EvmEventType int
 
 const (
-	EvmEventStakingCreateValidator EvmEventType = 1 // create validator
+	EvmEventCheckValidatorStatus EvmEventType = 1 // check validator status
+	EvmEventSetValidatorStatus   EvmEventType = 2 // set validator status
 )
 
 type EvmEvent struct {
@@ -11,4 +12,4 @@ type EvmEvent struct {
 	Data interface{}
 }
 
-type EvmEventCallback func(e *EvmEvent) error
+type EvmEventCallback func(ctx Context, e *EvmEvent) error

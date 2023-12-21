@@ -2,6 +2,8 @@ package keeper
 
 import (
 	"fmt"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"time"
 
 	gogotypes "github.com/cosmos/gogoproto/types"
@@ -484,4 +486,202 @@ func (k Keeper) IsValidatorJailed(ctx sdk.Context, addr sdk.ConsAddress) bool {
 	}
 
 	return v.Jailed
+}
+
+// createEvmValidator check evm contract about validator and delegate tokens to staking pool
+func (k Keeper) createEvmValidator(ctx sdk.Context, msg *types.MsgCreateValidator) (*types.MsgCreateValidatorResponse, error) {
+
+	var err error
+	logger := ctx.Logger()
+	if k.evmCallback == nil {
+		err = fmt.Errorf("evm callback not set")
+		logger.Error(err.Error())
+		return nil, err
+	}
+	err = k.evmCallback(ctx, &sdk.EvmEvent{
+		Type: sdk.EvmEventCheckValidatorStatus,
+		Data: msg,
+	})
+	if err != nil {
+		logger.Error("check validator status", "error", err.Error())
+		return nil, err
+	}
+	//delegate validator tokens to not bonded pool
+	delegatorAddress, err := sdk.AccAddressFromBech32(msg.DelegatorAddress)
+	if err != nil {
+		logger.Error("malformed delegator address '%s'", msg.DelegatorAddress)
+		return nil, err
+	}
+	delCoins := sdk.NewCoins(sdk.NewCoin(msg.Value.Denom, msg.Value.Amount))
+	err = k.bankKeeper.DelegateCoinsFromAccountToModule(ctx, delegatorAddress, types.NotBondedPoolName, delCoins)
+	if err != nil {
+		logger.Error("delegate coins from account to not bonded pool", "error", err.Error())
+		return nil, err
+	}
+
+	//save msg into staking kv-store
+	var valAddr sdk.ValAddress
+	valAddr, err = sdk.ValAddressFromBech32(msg.ValidatorAddress)
+	if err != nil {
+		logger.Error("malformed validator address '%s'", msg.ValidatorAddress)
+		return nil, err
+	}
+	k.SetCreateValidatorMsgByValAddr(ctx, valAddr, msg)
+	// call evm to update validator status when delegation finished
+	err = k.evmCallback(ctx, &sdk.EvmEvent{
+		Type: sdk.EvmEventSetValidatorStatus,
+		Data: msg,
+	})
+	if err != nil {
+		logger.Error("set validator status", "error", err.Error())
+		return nil, err
+	}
+	ctx.EventManager().EmitEvents(sdk.Events{
+		sdk.NewEvent(
+			types.EventTypeValidatorDelegate,
+			sdk.NewAttribute(types.AttributeKeyDelegator, msg.DelegatorAddress),
+			sdk.NewAttribute(types.AttributeKeyValidator, msg.ValidatorAddress),
+			sdk.NewAttribute(sdk.AttributeKeyAmount, msg.Value.String()),
+		),
+	})
+	return &types.MsgCreateValidatorResponse{}, nil
+}
+
+func (k Keeper) createNativeValidator(ctx sdk.Context, msg *types.MsgCreateValidator) (*types.MsgCreateValidatorResponse, error) {
+	valAddr, err := sdk.ValAddressFromBech32(msg.ValidatorAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	if msg.Commission.Rate.LT(k.MinCommissionRate(ctx)) {
+		return nil, sdkerrors.Wrapf(types.ErrCommissionLTMinRate, "cannot set validator commission to less than minimum rate of %s", k.MinCommissionRate(ctx))
+	}
+
+	// check to see if the pubkey or sender has been registered before
+	if _, found := k.GetValidator(ctx, valAddr); found {
+		return nil, types.ErrValidatorOwnerExists
+	}
+
+	pk, ok := msg.Pubkey.GetCachedValue().(cryptotypes.PubKey)
+	if !ok {
+		return nil, sdkerrors.Wrapf(sdkerrors.ErrInvalidType, "Expecting cryptotypes.PubKey, got %T", pk)
+	}
+
+	if _, found := k.GetValidatorByConsAddr(ctx, sdk.GetConsAddress(pk)); found {
+		return nil, types.ErrValidatorPubKeyExists
+	}
+
+	bondDenom := k.BondDenom(ctx)
+	if msg.Value.Denom != bondDenom {
+		return nil, sdkerrors.Wrapf(
+			sdkerrors.ErrInvalidRequest, "invalid coin denomination: got %s, expected %s", msg.Value.Denom, bondDenom,
+		)
+	}
+
+	if _, err := msg.Description.EnsureLength(); err != nil {
+		return nil, err
+	}
+
+	cp := ctx.ConsensusParams()
+	if cp != nil && cp.Validator != nil {
+		pkType := pk.Type()
+		hasKeyType := false
+		for _, keyType := range cp.Validator.PubKeyTypes {
+			if pkType == keyType {
+				hasKeyType = true
+				break
+			}
+		}
+		if !hasKeyType {
+			return nil, sdkerrors.Wrapf(
+				types.ErrValidatorPubKeyTypeNotSupported,
+				"got: %s, expected: %s", pk.Type(), cp.Validator.PubKeyTypes,
+			)
+		}
+	}
+
+	validator, err := types.NewValidator(valAddr, pk, msg.Description)
+	if err != nil {
+		return nil, err
+	}
+
+	commission := types.NewCommissionWithTime(
+		msg.Commission.Rate, msg.Commission.MaxRate,
+		msg.Commission.MaxChangeRate, ctx.BlockHeader().Time,
+	)
+
+	validator, err = validator.SetInitialCommission(commission)
+	if err != nil {
+		return nil, err
+	}
+
+	delegatorAddress, err := sdk.AccAddressFromBech32(msg.DelegatorAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	validator.MinSelfDelegation = msg.MinSelfDelegation
+
+	k.SetValidator(ctx, validator)
+	k.SetValidatorByConsAddr(ctx, validator)
+	k.SetNewValidatorByPowerIndex(ctx, validator)
+
+	// call the after-creation hook
+	if err := k.Hooks().AfterValidatorCreated(ctx, validator.GetOperator()); err != nil {
+		return nil, err
+	}
+
+	// move coins from the msg.Address account to a (self-delegation) delegator account
+	// the validator account and global shares are updated within here
+	// NOTE source will always be from a wallet which are unbonded
+	_, err = k.Delegate(ctx, delegatorAddress, msg.Value.Amount, types.Unbonded, validator, true)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx.EventManager().EmitEvents(sdk.Events{
+		sdk.NewEvent(
+			types.EventTypeCreateValidator,
+			sdk.NewAttribute(types.AttributeKeyDelegator, msg.DelegatorAddress),
+			sdk.NewAttribute(types.AttributeKeyValidator, msg.ValidatorAddress),
+			sdk.NewAttribute(sdk.AttributeKeyAmount, msg.Value.String()),
+		),
+	})
+	return &types.MsgCreateValidatorResponse{}, nil
+}
+
+// create validator message set
+func (k Keeper) GetCreateValidatorMsgByValAddr(ctx sdk.Context, valAddr sdk.ValAddress) *types.MsgCreateValidator {
+	var msg types.MsgCreateValidator
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(valAddr.Bytes())
+	err := k.cdc.Unmarshal(bz, &msg)
+	if err != nil {
+		return nil
+	}
+	return &msg
+}
+
+// create validator message set
+func (k Keeper) SetCreateValidatorMsgByValAddr(ctx sdk.Context, valAddr sdk.ValAddress, msg *types.MsgCreateValidator) {
+	store := ctx.KVStore(k.storeKey)
+	bz := k.cdc.MustMarshal(msg)
+	store.Set(valAddr.Bytes(), bz)
+}
+
+func (k Keeper) CreateEvmValidator(ctx sdk.Context, valAddr sdk.ValAddress) (*types.MsgCreateValidatorResponse, error) {
+	msg := k.GetCreateValidatorMsgByValAddr(ctx, valAddr)
+	if msg == nil {
+		return nil, fmt.Errorf("create validator error: message is nil")
+	}
+	delegatorAddress, err := sdk.AccAddressFromBech32(msg.DelegatorAddress)
+	if err != nil {
+		return nil, err
+	}
+	delCoins := sdk.NewCoins(sdk.NewCoin(msg.Value.Denom, msg.Value.Amount))
+	err = k.bankKeeper.UndelegateCoinsFromModuleToAccount(ctx, types.NotBondedPoolName, delegatorAddress, delCoins)
+	if err != nil {
+		return nil, err
+	}
+	return k.createNativeValidator(ctx, msg)
 }

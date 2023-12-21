@@ -68,15 +68,14 @@ func (k Keeper) allocateTokensToBeneficiaries(ctx sdk.Context, validator staking
 	var vr = params.VoterRewards
 	voterReward = reward.MulDecTruncate(vr.Ratio)
 	minerReward = reward.Sub(voterReward)
-	var coins sdk.Coins
-	coins = k.DecCoins2Coins(voterReward)
 	if minerReward.IsAnyNegative() {
 		panic("[distribution] reward all coins must be positive")
 	}
-
-	if !vr.Ratio.IsZero() { // send to validator's followers
-		k.sendRewardsToFollowers(ctx, coins, validator)
-		logger.Debug("[distribution] send to followers", "tokens", coins.String())
+	var coins sdk.Coins
+	coins = k.DecCoins2Coins(voterReward)
+	if voterReward.IsAllPositive() {
+		// part of rewards retain in distribution module
+		logger.Debug("[distribution] part of rewards retain in module", "tokens", coins)
 	}
 
 	var ok bool
@@ -93,24 +92,6 @@ func (k Keeper) allocateTokensToBeneficiaries(ctx sdk.Context, validator staking
 		k.AllocateTokensToValidator(ctx, validator, minerReward)
 		logger.Debug("[distribution] allocate tokens", "validator", validator.GetOperator().String(), "reward", minerReward.String())
 	}
-}
-
-func (k Keeper) sendRewardsToBeneficiary(ctx sdk.Context, coins sdk.Coins, beneficiary string) {
-	var err error
-	var va sdk.AccAddress
-	va, err = sdk.AccAddressFromBech32(beneficiary)
-	if err != nil {
-		panic("[distribution] reward beneficiary address invalid")
-	}
-	err = k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, va, coins)
-	if err != nil {
-		ctx.Logger().Error("[distribution] send voter's tokens", "error", err.Error())
-		return
-	}
-}
-
-func (k Keeper) sendRewardsToFollowers(ctx sdk.Context, coins sdk.Coins, validator stakingtypes.ValidatorI) {
-	//TODO: read validator followers and send ...
 }
 
 func (k Keeper) isBurnValidator(validator stakingtypes.ValidatorI, burnValidators []string) bool {
