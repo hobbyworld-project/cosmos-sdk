@@ -493,13 +493,13 @@ func (k Keeper) createEvmValidator(ctx sdk.Context, msg *types.MsgCreateValidato
 
 	var err error
 	logger := ctx.Logger()
-	if k.evmCallback == nil {
+	if k.govCallback == nil {
 		err = fmt.Errorf("evm callback not set")
 		logger.Error(err.Error())
 		return nil, err
 	}
-	err = k.evmCallback(ctx, &sdk.EvmEvent{
-		Type: sdk.EvmEventCheckValidatorStatus,
+	err = k.govCallback(ctx, &sdk.GovEvent{
+		Type: sdk.GovEventCheckValidatorStatus,
 		Data: msg,
 	})
 	if err != nil {
@@ -528,8 +528,8 @@ func (k Keeper) createEvmValidator(ctx sdk.Context, msg *types.MsgCreateValidato
 	}
 	k.SetCreateValidatorMsgByValAddr(ctx, valAddr, msg)
 	// call evm to update validator status when delegation finished
-	err = k.evmCallback(ctx, &sdk.EvmEvent{
-		Type: sdk.EvmEventSetValidatorStatus,
+	err = k.govCallback(ctx, &sdk.GovEvent{
+		Type: sdk.GovEventSetValidatorStatus,
 		Data: msg,
 	})
 	if err != nil {

@@ -691,7 +691,9 @@ func addressBytesFromHexString(address string) ([]byte, error) {
 	if len(address) == 0 {
 		return nil, ErrEmptyHexAddress
 	}
-
+	if strings.HasPrefix(address, "0x") {
+		address = strings.TrimPrefix(address, "0x")
+	}
 	return hex.DecodeString(address)
 }
 

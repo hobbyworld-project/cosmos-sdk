@@ -69,7 +69,8 @@ func (k Keeper) allocateTokensToBeneficiaries(ctx sdk.Context, validator staking
 	voterReward = reward.MulDecTruncate(vr.Ratio)
 	minerReward = reward.Sub(voterReward)
 	if minerReward.IsAnyNegative() {
-		panic("[distribution] reward all coins must be positive")
+		logger.Error("[distribution] reward all coins must be positive")
+		return
 	}
 	var coins sdk.Coins
 	coins = k.DecCoins2Coins(voterReward)
@@ -82,12 +83,14 @@ func (k Keeper) allocateTokensToBeneficiaries(ctx sdk.Context, validator staking
 	// rewards will be burned by this address list
 	ok = k.isBurnValidator(validator, params.BurnValidators)
 	if ok {
-		coins = k.DecCoins2Coins(minerReward)
+		burnCoins := reward //all miner reward will be burned
+		coins = k.DecCoins2Coins(burnCoins)
 		err = k.bankKeeper.BurnCoins(ctx, types.ModuleName, coins)
 		if err != nil {
 			logger.Error("[distribution] burn tokens", "error", err.Error())
 			return
 		}
+		logger.Debug("[distribution] burn tokens", "validator", validator.GetOperator().String(), "reward", burnCoins.String())
 	} else {
 		k.AllocateTokensToValidator(ctx, validator, minerReward)
 		logger.Debug("[distribution] allocate tokens", "validator", validator.GetOperator().String(), "reward", minerReward.String())

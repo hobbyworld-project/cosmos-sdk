@@ -28,7 +28,7 @@ type Keeper struct {
 	bankKeeper  types.BankKeeper
 	hooks       types.StakingHooks
 	authority   string
-	evmCallback sdk.EvmEventCallback
+	govCallback sdk.GovEventCallback
 }
 
 // NewKeeper creates a new staking Keeper instance
@@ -133,6 +133,6 @@ func (k Keeper) GetValidatorUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 	return valUpdates.Updates
 }
 
-func (k Keeper) SetEvmCallback(cb sdk.EvmEventCallback) {
-	k.evmCallback = cb
+func (k Keeper) SetEvmCallback(cb sdk.GovEventCallback) {
+	k.govCallback = cb
 }

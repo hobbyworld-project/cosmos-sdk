@@ -1,15 +1,15 @@
 package types
 
-type EvmEventType int
+type GovEventType int
 
 const (
-	EvmEventCheckValidatorStatus EvmEventType = 1 // check validator status
-	EvmEventSetValidatorStatus   EvmEventType = 2 // set validator status
+	GovEventCheckValidatorStatus GovEventType = 1 // check validator status
+	GovEventSetValidatorStatus   GovEventType = 2 // set validator status
 )
 
-type EvmEvent struct {
-	Type EvmEventType
+type GovEvent struct {
+	Type GovEventType
 	Data interface{}
 }
 
-type EvmEventCallback func(ctx Context, e *EvmEvent) error
+type GovEventCallback func(ctx Context, e *GovEvent) error
