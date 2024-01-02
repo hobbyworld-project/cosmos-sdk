@@ -8,6 +8,7 @@ const (
 	EventTypeEditValidator             = "edit_validator"
 	EventTypeDelegate                  = "delegate"
 	EventTypeUnbond                    = "unbond"
+	EventTypeCandidateUnbond           = "candidate_unbond"
 	EventTypeCancelUnbondingDelegation = "cancel_unbonding_delegation"
 	EventTypeRedelegate                = "redelegate"
 	EventTypeValidatorDelegate         = "validator_delegate"

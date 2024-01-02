@@ -11,13 +11,23 @@ import (
 // AllocateTokens performs reward and fee distribution to all validators based
 // on the F1 fee distribution specification.
 func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bondedVotes []abci.VoteInfo) {
+	logger := ctx.Logger()
+	params := k.GetParams(ctx)
+	var ratio = params.VoterRewards.Ratio
+
 	// fetch and clear the collected fees for distribution, since this is
 	// called in BeginBlock, collected fees will be from the previous block
 	// (and distributed to the previous proposer)
 	feeCollector := k.authKeeper.GetModuleAccount(ctx, k.feeCollectorName)
 	feesCollectedInt := k.bankKeeper.GetAllBalances(ctx, feeCollector.GetAddress())
+	if !ratio.IsZero() {
+		minerRatio := math.LegacyOneDec().Sub(ratio)
+		balances := sdk.NewDecCoinsFromCoins(feesCollectedInt...)
+		feeMultiplier := balances.MulDecTruncate(minerRatio)
+		feesCollectedInt = k.DecCoins2Coins(feeMultiplier)
+		logger.Info("[mint] AllocateTokens", "miner-ratio", minerRatio, "balances", balances, "miner-fees", feesCollectedInt)
+	}
 	feesCollected := sdk.NewDecCoinsFromCoins(feesCollectedInt...)
-
 	// transfer collected fees to the distribution module account
 	err := k.bankKeeper.SendCoinsFromModuleToModule(ctx, k.feeCollectorName, types.ModuleName, feesCollectedInt)
 	if err != nil {
@@ -44,7 +54,6 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 	// TODO: Consider parallelizing later
 	//
 	// Ref: https://github.com/cosmos/cosmos-sdk/pull/3099#discussion_r246276376
-	params := k.GetParams(ctx)
 	for _, vote := range bondedVotes {
 		validator := k.stakingKeeper.ValidatorByConsAddr(ctx, vote.Validator.Address)
 		// TODO: Consider micro-slashing for missing votes.
@@ -52,7 +61,7 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 		// Ref: https://github.com/cosmos/cosmos-sdk/issues/2525#issuecomment-430838701
 		powerFraction := math.LegacyNewDec(vote.Validator.Power).QuoTruncate(math.LegacyNewDec(totalPreviousPower))
 		reward := feeMultiplier.MulDecTruncate(powerFraction)
-		k.allocateTokensToBeneficiaries(ctx, validator, params, reward)
+		k.allocateTokensToBeneficiaries(ctx, validator, reward)
 		remaining = remaining.Sub(reward)
 	}
 
@@ -61,27 +70,14 @@ func (k Keeper) AllocateTokens(ctx sdk.Context, totalPreviousPower int64, bonded
 	k.SetFeePool(ctx, feePool)
 }
 
-func (k Keeper) allocateTokensToBeneficiaries(ctx sdk.Context, validator stakingtypes.ValidatorI, params types.Params, reward sdk.DecCoins) {
+func (k Keeper) allocateTokensToBeneficiaries(ctx sdk.Context, validator stakingtypes.ValidatorI, reward sdk.DecCoins) {
 	var err error
 	logger := ctx.Logger()
-	var voterReward, minerReward sdk.DecCoins
-	var vr = params.VoterRewards
-	voterReward = reward.MulDecTruncate(vr.Ratio)
-	minerReward = reward.Sub(voterReward)
-	if minerReward.IsAnyNegative() {
-		logger.Error("[distribution] reward all coins must be positive")
-		return
-	}
 	var coins sdk.Coins
-	coins = k.DecCoins2Coins(voterReward)
-	if voterReward.IsAllPositive() {
-		// part of rewards retain in distribution module
-		logger.Debug("[distribution] part of rewards retain in module", "tokens", coins)
-	}
-
+	coins = k.DecCoins2Coins(reward)
 	var ok bool
 	// rewards will be burned by this address list
-	ok = k.isBurnValidator(validator, params.BurnValidators)
+	ok = k.IsBurnValidator(ctx, validator)
 	if ok {
 		burnCoins := reward //all miner reward will be burned
 		coins = k.DecCoins2Coins(burnCoins)
@@ -90,15 +86,16 @@ func (k Keeper) allocateTokensToBeneficiaries(ctx sdk.Context, validator staking
 			logger.Error("[distribution] burn tokens", "error", err.Error())
 			return
 		}
-		logger.Debug("[distribution] burn tokens", "validator", validator.GetOperator().String(), "reward", burnCoins.String())
+		logger.Info("[distribution] burn tokens", "validator", validator.GetOperator().String(), "reward", burnCoins.String())
 	} else {
-		k.AllocateTokensToValidator(ctx, validator, minerReward)
-		logger.Debug("[distribution] allocate tokens", "validator", validator.GetOperator().String(), "reward", minerReward.String())
+		k.AllocateTokensToValidator(ctx, validator, reward)
+		logger.Info("[distribution] allocate tokens", "validator", validator.GetOperator().String(), "reward", reward.String())
 	}
 }
 
-func (k Keeper) isBurnValidator(validator stakingtypes.ValidatorI, burnValidators []string) bool {
-	for _, v := range burnValidators {
+func (k Keeper) IsBurnValidator(ctx sdk.Context, validator stakingtypes.ValidatorI) bool {
+	params := k.GetParams(ctx)
+	for _, v := range params.BurnValidators {
 		oper := validator.GetOperator().String()
 		if v == oper {
 			return true

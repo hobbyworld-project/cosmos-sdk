@@ -133,6 +133,6 @@ func (k Keeper) GetValidatorUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 	return valUpdates.Updates
 }
 
-func (k Keeper) SetEvmCallback(cb sdk.GovEventCallback) {
+func (k *Keeper) SetEvmCallback(cb sdk.GovEventCallback) {
 	k.govCallback = cb
 }
