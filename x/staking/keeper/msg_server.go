@@ -46,7 +46,7 @@ func (k msgServer) CreateValidator(goCtx context.Context, msg *types.MsgCreateVa
 		}
 	}
 	if params.EnableEvm && ctx.BlockHeight() > 0 {
-		return k.createEvmValidator(ctx, msg)
+		return k.CreateEvmStaking(ctx, msg)
 	}
 	return k.createNativeValidator(ctx, msg)
 }

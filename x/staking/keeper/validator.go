@@ -488,8 +488,8 @@ func (k Keeper) IsValidatorJailed(ctx sdk.Context, addr sdk.ConsAddress) bool {
 	return v.Jailed
 }
 
-// createEvmValidator check evm contract about validator and delegate tokens to staking pool
-func (k Keeper) createEvmValidator(ctx sdk.Context, msg *types.MsgCreateValidator) (*types.MsgCreateValidatorResponse, error) {
+// CreateEvmStaking check evm contract about validator and delegate tokens to staking pool
+func (k Keeper) CreateEvmStaking(ctx sdk.Context, msg *types.MsgCreateValidator) (*types.MsgCreateValidatorResponse, error) {
 
 	var err error
 	logger := ctx.Logger()
